@@ -26,6 +26,7 @@ class PytorchParser(Parser):
     'onnx::Add': 'Add',
     'onnx::Concat': 'Concat',
     'onnx::Relu': 'Relu',
+    'onnx::PRelu': 'PRelu',
     'onnx::Tanh': 'Tanh',
     'onnx::Sigmoid': 'Sigmoid',
     'onnx::Mul': 'Mul'
@@ -306,6 +307,13 @@ class PytorchParser(Parser):
 
     def rename_Relu(self, source_node):
         IR_node = self._convert_identity_operation(source_node, new_op="Relu")
+        
+    def rename_PRelu(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, new_op="PRelu")
+        # gamma
+        weights_name = '{0}.weight'.format(source_node.weights_name)
+        gamma = self.state_dict[weights_name].numpy()
+        self.set_weight(source_node.name, "gamma", gamma)
 
     def rename_Tanh(self, source_node):
         IR_node = self._convert_identity_operation(source_node, new_op="Tanh")
