@@ -78,9 +78,9 @@ def load_weights(weight_file):
         return
 
     try:
-        weights_dict = np.load(weight_file).item()
+        weights_dict = np.load(weight_file, allow_pickle=True).item()
     except:
-        weights_dict = np.load(weight_file, encoding='bytes').item()
+        weights_dict = np.load(weight_file, allow_pickle=True, encoding='bytes').item()
 
     return weights_dict
 
@@ -254,7 +254,7 @@ class KitModel(nn.Module):
                 ceil_mode = self.is_ceil_mode(IR_node.get_attr('pads'))
 
                 # input_node = self._defuse_padding(IR_node, exstr)
-                code = "{:<15} = F.{}({}, kernel_size={}, stride={}, padding={}, ceil_mode={})".format(
+                code = "{:<15} = F.{}({}, kernel_size={}, stride={}, padding={}, ceil_mode={}, count_include_pad=False)".format(
                     IR_node.variable_name,
                     pool_name,
                     self.parent_variable_name(IR_node),
@@ -303,6 +303,9 @@ class KitModel(nn.Module):
         in_features = 1
         for i in self.IR_graph.get_parent(IR_node.name, [0]).layer.attr['_output_shapes'].list.shape[0].dim[1:]:
             in_features *= i.size
+
+        if IR_node.get_attr('in_features') != None:
+            in_features = IR_node.get_attr('in_features')
 
         self.add_init(2, "self.{} = self.__dense(name = '{}', in_features = {}, out_features = {}, bias = {})".format(
             IR_node.variable_name,
@@ -762,6 +765,43 @@ class KitModel(nn.Module):
         return code
 
 
+    def emit_Square(self, IR_node):
+        code = "{:<15} = {}.pow(2)".format(
+            IR_node.variable_name,
+            self.parent_variable_name(IR_node))
+        return code
+
+
+    def emit_PRelu(self, IR_node):
+        code = "{:<15} = F.prelu({}, torch.from_numpy(__weights_dict['{}']['weights']))".format(
+            IR_node.variable_name,
+            self.parent_variable_name(IR_node, [0]),
+            IR_node.name)
+        
+        if self.weight_loaded:
+            self.weights_dict[IR_node.name]['weights'] = self.weights_dict[IR_node.name]['gamma']
+        
+        return code
+
+
+    def emit_Cast(self, IR_node):
+        dstType = IR_node.get_attr('dstType')
+
+        if dstType == 'float':
+            dst = 'torch.FloatTensor'
+        elif dstType == 'double':
+            dst = 'torch.DoubleTensor'
+        elif dstType == 'int':
+            dst = 'torch.IntTensor'
+        
+        code = "{:<15} = {}.type({})".format(
+            IR_node.real_variable_name,
+            self.parent_variable_name(IR_node),
+            dst)
+
+        return code
+
+
     def emit_Scope(self, IR_node):
         input_vars = [self.parent_variable_name(IR_node, [idx]) for idx in range(len(IR_node.in_edges))]
         code = "{:<15} = self.__{}({})".format(
@@ -846,7 +886,7 @@ class KitModel(nn.Module):
         self.add_body(0, """
     @staticmethod
     def __batch_normalization(dim, name, **kwargs):
-        if   dim == 1:  layer = nn.BatchNorm1d(**kwargs)
+        if   dim == 0 or dim == 1:  layer = nn.BatchNorm1d(**kwargs)
         elif dim == 2:  layer = nn.BatchNorm2d(**kwargs)
         elif dim == 3:  layer = nn.BatchNorm3d(**kwargs)
         else:           raise NotImplementedError()

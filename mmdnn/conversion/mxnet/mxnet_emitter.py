@@ -231,9 +231,9 @@ def predict(model, labels, url):
         return
 
     try:
-        weights_dict = np.load(weight_file).item()
+        weights_dict = np.load(weight_file, allow_pickle=True).item()
     except:
-        weights_dict = np.load(weight_file, encoding='bytes').item()
+        weights_dict = np.load(weight_file, allow_pickle=True, encoding='bytes').item()
 
     arg_params = dict()
     aux_params = dict()
@@ -520,8 +520,10 @@ def predict(model, labels, url):
 
             if self.weight_loaded:
                 if not fix_gamma:
-                    self.output_weights[IR_node.name + "_gamma"] = np.multiply(weight_dict['scale'], weight_dict_scale['scale'])
-                self.output_weights[IR_node.name + "_beta"] = np.multiply(weight_dict['bias'], weight_dict_scale['scale']) + weight_dict_scale['bias']
+                #     self.output_weights[IR_node.name + "_gamma"] = np.multiply(weight_dict['scale'], weight_dict_scale['scale'])
+                # self.output_weights[IR_node.name + "_beta"] = np.multiply(weight_dict['bias'], weight_dict_scale['scale']) + weight_dict_scale['bias']
+                    self.output_weights[IR_node.name + "_gamma"] = weight_dict['scale']
+                self.output_weights[IR_node.name + "_beta"] = weight_dict['bias']
 
             # not supported yet
             use_global_stats = "False"

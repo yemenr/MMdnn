@@ -14,6 +14,9 @@ from mmdnn.conversion.common.utils import *
 from mmdnn.conversion.common.DataStructure.parser import Parser
 from tensorflow.tools.graph_transforms import TransformGraph
 from mmdnn.conversion.rewriter.utils import *
+import tempfile
+import os
+import shutil
 
 
 class TensorflowParser(Parser):
@@ -113,6 +116,9 @@ class TensorflowParser(Parser):
         data = dict()
         for name in var_to_shape_map:
             tensor = reader.get_tensor(name)
+            name_seg = name.split("/")
+            if name_seg[-1] == "ExponentialMovingAverage":
+                name = "/".join(name_seg[:-1])
             data[name] = tensor
 
         print ("Tensorflow checkpoint file [%s] loaded successfully. [%d] variables loaded." % (model_weight_path, len(data)))
@@ -253,7 +259,7 @@ class TensorflowParser(Parser):
             self.tf_graph = TensorflowGraph(model)
             for node in self.tf_graph.model.node:
                 if node.name in in_nodes:
-                    node.attr['shape'].list.shape.extend([tensor_input.as_proto()])
+                    node.attr['shape'].shape.CopyFrom(tensor_input.as_proto())
                     node.attr['_output_shapes'].list.shape.pop()  #unknown_rank pop
                     node.attr['_output_shapes'].list.shape.extend([tensor_input.as_proto()])
 
@@ -272,21 +278,23 @@ class TensorflowParser(Parser):
 
         #  Get input node name
         if not in_nodes:
-            in_nodes = {}
+            in_nodes = []
             for node in model.node:
                 if node.op == 'Placeholder':
-                    in_node_name = str(node.name)
-                    in_node_shape = node.attr['_output_shapes'].list.shape[0]
-                    in_node_shape_str = self._shapeToStr(in_node_shape)
-                    in_nodes[in_node_name] = in_node_shape_str
+                    in_nodes.append(node.name)
 
-        transformed_graph_def = TransformGraph(model, in_nodes.keys(),
+        transformed_graph_def = TransformGraph(model, in_nodes,
                                             dest_nodes, transforms)
         in_type_list = {}
+        in_shape_list = {}
+
         for n in transformed_graph_def.node:
             if n.name in in_nodes:
                 in_type_list[n.name] = n.attr['dtype'].type
-        
+                in_node_shape = n.attr['shape'].shape
+                in_node_shape_str = self._shapeToStr(in_node_shape)
+                in_shape_list[n.name] = in_node_shape_str
+
         dtype = tensorflow.float32
         with tensorflow.Graph().as_default() as g:
             input_map = {}
@@ -300,16 +308,17 @@ class TensorflowParser(Parser):
                 elif in_type_list[in_node] == 10:
                     dtype = tensorflow.bool
                 
-                x = tensorflow.placeholder(dtype, shape = in_nodes[in_node])
+                x = tensorflow.placeholder(dtype, shape = in_shape_list[in_node])
                 input_map[in_node] = x
 
             tensorflow.import_graph_def(transformed_graph_def, name='', input_map=input_map)
 
         with tensorflow.Session(graph = g) as sess:
-
-            meta_graph_def = tensorflow.train.export_meta_graph(filename='./my-model.meta')
+            tempdir = tempfile.mkdtemp()
+            meta_graph_def = tensorflow.train.export_meta_graph(filename=os.path.join(tempdir, 'my-model.meta'))
             model = meta_graph_def.graph_def
-        
+            shutil.rmtree(tempdir)
+
         self.tf_graph = TensorflowGraph(model)
         self.tf_graph.build()
 
@@ -428,7 +437,7 @@ class TensorflowParser(Parser):
 
         kwargs = {}
         if 'data_format' in source_node.layer.attr:
-            kwargs['data_format'] = source_node.get_attr('data_format')
+            kwargs["data_format"] = source_node.get_attr('data_format')
 
         if 'dtype' in source_node.layer.attr:
             assert source_node.layer.attr['dtype'].type in TensorflowParser.dtype_map, 'type [{}] is unknown.'.format(source_node.layer.attr['dtype'].type)
@@ -510,8 +519,9 @@ class TensorflowParser(Parser):
         IR_node = self._convert_identity_operation(source_node, new_op='DataInput')
         # shape
         TensorflowParser._copy_shape(source_node, IR_node)
-        IR_node.attr['shape'].shape.dim[0].size = -1
-        IR_node.attr['_output_shapes'].list.shape[0].dim[0].size = -1
+        if len(IR_node.attr['shape'].shape.dim)>0 and len(IR_node.attr['_output_shapes'].list.shape)>0 and len(IR_node.attr['_output_shapes'].list.shape[0].dim)>0:
+            IR_node.attr['shape'].shape.dim[0].size = -1
+            IR_node.attr['_output_shapes'].list.shape[0].dim[0].size = -1
 
 
     def rename_Conv2D(self, source_node):
@@ -1044,3 +1054,16 @@ class TensorflowParser(Parser):
     def rename_Maxmum(self, source_node):
         self._add_constant_node(source_node)
         self._convert_identity_operation(source_node)
+
+    def rename_Cast(self, source_node):
+        IR_node = self._convert_identity_operation(source_node)
+        dst = source_node.get_attr('DstT')
+        if dst == 1:
+            dst = 'float'
+        elif dst == 3:
+            dst = 'int'
+        else:
+            raise NotImplementedError
+
+        kwargs = {'dstType' : dst}
+        assign_IRnode_values(IR_node, kwargs)
