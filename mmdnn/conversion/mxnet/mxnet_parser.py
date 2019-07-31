@@ -13,7 +13,7 @@ import mmdnn.conversion.common.IR.graph_pb2 as graph_pb2
 from mmdnn.conversion.common.IR.graph_pb2 import NodeDef, GraphDef, DataType
 from mmdnn.conversion.common.DataStructure.parser import Parser
 from mmdnn.conversion.common.utils import *
-
+import pdb
 class MXNetParser(Parser):
 
     dtype_map = {
@@ -402,12 +402,18 @@ class MXNetParser(Parser):
         # use bias (no_bias default = False)
         IR_node.attr["use_bias"].b = not MXNetParser.str2bool(source_node.get_attr("no_bias", "False"))
 
+        changeFlag = False
+        weightPrefix = source_node.name
+        if weightPrefix.endswith("_fwd"):
+            changeFlag = True
+            weightPrefix = weightPrefix.strip("_fwd")
+
         # weights
         if self.weight_loaded:
             if self.data_format == 'NM':
-                self.set_weight(source_node.name, "weights", self.weight_data.get(source_node.name + "_weight").asnumpy().transpose((1, 0)))
+                self.set_weight(source_node.name, "weights", self.weight_data.get(weightPrefix + "_weight").asnumpy().transpose((1, 0)))
             else:
-                weight = self.weight_data.get(source_node.name + "_weight").asnumpy().transpose((1, 0))
+                weight = self.weight_data.get(weightPrefix + "_weight").asnumpy().transpose((1, 0))
                 original_shape = weight.shape
 
                 channel_first_list = self.trace_shape(source_node, IR_node)
@@ -419,7 +425,7 @@ class MXNetParser(Parser):
                 self.set_weight(source_node.name, "weights", weight)
 
             if IR_node.attr["use_bias"].b:
-                self.set_weight(source_node.name, "bias", self.weight_data.get(source_node.name + "_bias").asnumpy())
+                self.set_weight(source_node.name, "bias", self.weight_data.get(weightPrefix + "_bias").asnumpy())
 
         if not self.data_format == 'NM':
             # print("Warning: Layer [{}] has changed model data format from [{}] to [NM]".format(source_node.name, self.data_format))
@@ -502,9 +508,15 @@ class MXNetParser(Parser):
         else:
             IR_node.attr["pads"].list.i.extend([0, 0] * (dim + 2))
 
+        changeFlag = False
+        weightPrefix = source_node.name
+        if weightPrefix.endswith("_fwd"):
+            changeFlag = True
+            weightPrefix = weightPrefix.strip("_fwd")
+
         # weights
         if self.weight_loaded:
-            weight = self.weight_data.get(source_node.name + "_weight").asnumpy()
+            weight = self.weight_data.get(weightPrefix + "_weight").asnumpy()
             if not layout in MXNetParser.channels_last:
                 weight = MXNetParser.transpose(weight, dim)
                 if IR_node.op == "DepthwiseConv":
@@ -512,7 +524,7 @@ class MXNetParser(Parser):
             self.set_weight(source_node.name, "weights", weight)
 
             if IR_node.attr["use_bias"].b:
-                self.set_weight(source_node.name, "bias", self.weight_data.get(source_node.name + "_bias").asnumpy())
+                self.set_weight(source_node.name, "bias", self.weight_data.get(weightPrefix + "_bias").asnumpy())
 
 
     def rename_Activation(self, source_node):
@@ -537,21 +549,29 @@ class MXNetParser(Parser):
         # momentum
         IR_node.attr["momentum"].f = float(source_node.get_attr("momentum", "0.9"))
 
+        meanStr = "_moving_mean"
+        varStr = "_moving_var"
+        weightPrefix = source_node.name
+        if weightPrefix.endswith("_fwd"):
+            meanStr = "_running_mean"
+            varStr = "_running_var"
+            weightPrefix = weightPrefix.strip("_fwd")
+
         # weights
         if self.weight_loaded:
             # gamma
             if IR_node.attr["scale"].b:
-                self.set_weight(source_node.name, "scale", self.weight_data.get(source_node.name + "_gamma").asnumpy())
+                self.set_weight(source_node.name, "scale", self.weight_data.get(weightPrefix + "_gamma").asnumpy())
 
             # beta
             if IR_node.attr["bias"].b:
-                self.set_weight(source_node.name, "bias", self.weight_data.get(source_node.name + "_beta").asnumpy())
+                self.set_weight(source_node.name, "bias", self.weight_data.get(weightPrefix + "_beta").asnumpy())
 
             # mean
-            self.set_weight(source_node.name, "mean", self.weight_data.get(source_node.name + "_moving_mean").asnumpy())
+            self.set_weight(source_node.name, "mean", self.weight_data.get(weightPrefix + meanStr).asnumpy())
 
             # var
-            self.set_weight(source_node.name, "var", self.weight_data.get(source_node.name + "_moving_var").asnumpy())
+            self.set_weight(source_node.name, "var", self.weight_data.get(weightPrefix + varStr).asnumpy())
 
 
     def rename_Pooling(self, source_node):
@@ -714,15 +734,21 @@ class MXNetParser(Parser):
         # groups
         IR_node.attr["group"].i = int(source_node.get_attr("num_group", "1"))
 
+        changeFlag = False
+        weightPrefix = source_node.name
+        if weightPrefix.endswith("_fwd"):
+            changeFlag = True
+            weightPrefix = weightPrefix.strip("_fwd")
+
         # weights
         if self.weight_loaded:
-            weight = self.weight_data.get(source_node.name + "_weight").asnumpy()
+            weight = self.weight_data.get(weightPrefix + "_weight").asnumpy()
             if not layout in MXNetParser.channels_last:
                 weight = MXNetParser.transpose(weight, dim)
             self.set_weight(source_node.name, "weights", weight)
 
             if IR_node.attr["use_bias"].b:
-                self.set_weight(source_node.name, "bias", self.weight_data.get(source_node.name + "_bias").asnumpy())
+                self.set_weight(source_node.name, "bias", self.weight_data.get(weightPrefix + "_bias").asnumpy())
 
 
     # def rename_RNN(self, source_node):
@@ -761,12 +787,18 @@ class MXNetParser(Parser):
 
         IR_node = self.IR_graph.node.add()
 
+        changeFlag = False
+        weightPrefix = source_node.name
+        if weightPrefix.endswith("_fwd"):
+            changeFlag = True
+            weightPrefix = weightPrefix.strip("_fwd")
+
         # name, op
         if act_type == 'prelu':
             self._copy_and_reop(source_node, IR_node, "PRelu")
 
             # gamma
-            self.set_weight(source_node.name, "gamma", self.weight_data.get(source_node.name + "_gamma").asnumpy())
+            self.set_weight(source_node.name, "gamma", self.weight_data.get(weightPrefix + "_gamma").asnumpy())
 
         else:  # All other cases set to 'Elu'
             self._copy_and_reop(source_node, IR_node, "Elu")
@@ -940,4 +972,32 @@ class MXNetParser(Parser):
 
     def rename_BlockGrad(self, source_node):
         return
+    
+    def rename_UpSampling(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, "UpSampling2D")
+        kwargs = dict()
+        scale = MXNetParser.str2intList(source_node.get_attr("scale"))[0]
+        kwargs['scales'] = [scale, scale]
+        assign_IRnode_values(IR_node, kwargs)
 
+    def rename_Crop(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, "Slice")
+        targetName = source_node.in_edges[1]
+        targetShape = IR_node.attr["_output_shapes"].list.shape
+        targetShape = [targetShape[0].dim[0].size, targetShape[0].dim[1].size, targetShape[0].dim[2].size, targetShape[0].dim[3].size] 
+        kwargs = dict()
+        kwargs["starts"] = [0,0,0,0]
+        kwargs["ends"] = targetShape
+        kwargs["strides"] = [1,1,1,1]
+        assign_IRnode_values(IR_node, kwargs)
+    
+    def rename_Reshape(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, "Reshape")
+        kwargs = dict()
+        targetShape = IR_node.attr["_output_shapes"].list.shape
+        targetShape = [targetShape[0].dim[0].size, targetShape[0].dim[1].size, targetShape[0].dim[2].size, targetShape[0].dim[3].size]
+        kwargs['shape'] = targetShape
+        assign_IRnode_values(IR_node, kwargs)
+
+    def rename_SoftmaxActivation(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, "Softmax")

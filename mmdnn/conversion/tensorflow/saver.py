@@ -6,19 +6,25 @@ def save_model(MainModel, network_filepath, weight_filepath, dump_filepath, dump
         tag_list = [tf.saved_model.tag_constants.SERVING]
     else:
         tag_list = [tf.saved_model.tag_constants.TRAINING]
-    input, model = MainModel.KitModel(weight_filepath)
+    inputs, outputs = MainModel.KitModel(weight_filepath)
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
         builder = tf.saved_model.builder.SavedModelBuilder(dump_filepath)
-
-        tensor_info_input = tf.saved_model.utils.build_tensor_info(input)
-        tensor_info_output = tf.saved_model.utils.build_tensor_info(model)
+        
+        inputsMap = {}
+        outputsMap = {}
+        for k in range(len(inputs)):
+            input = tf.saved_model.utils.build_tensor_info(inputs[k])
+            inputsMap["input_"+str(k)] = input
+        for k in range(len(outputs)):
+            output = tf.saved_model.utils.build_tensor_info(outputs[k])
+            outputsMap["output_"+str(k)] = output
 
         prediction_signature = (
             tf.saved_model.signature_def_utils.build_signature_def(
-                inputs={'input': tensor_info_input},
-                outputs={'output': tensor_info_output},
+                inputs=inputsMap,
+                outputs=outputsMap,
                 method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME
             )
         )
