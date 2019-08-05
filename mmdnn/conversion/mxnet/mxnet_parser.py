@@ -406,7 +406,7 @@ class MXNetParser(Parser):
         weightPrefix = source_node.name
         if weightPrefix.endswith("_fwd"):
             changeFlag = True
-            weightPrefix = weightPrefix.strip("_fwd")
+            weightPrefix = weightPrefix.split("_fwd")[0]
 
         # weights
         if self.weight_loaded:
@@ -512,7 +512,7 @@ class MXNetParser(Parser):
         weightPrefix = source_node.name
         if weightPrefix.endswith("_fwd"):
             changeFlag = True
-            weightPrefix = weightPrefix.strip("_fwd")
+            weightPrefix = weightPrefix.split("_fwd")[0]
 
         # weights
         if self.weight_loaded:
@@ -555,7 +555,7 @@ class MXNetParser(Parser):
         if weightPrefix.endswith("_fwd"):
             meanStr = "_running_mean"
             varStr = "_running_var"
-            weightPrefix = weightPrefix.strip("_fwd")
+            weightPrefix = weightPrefix.split("_fwd")[0]
 
         # weights
         if self.weight_loaded:
@@ -738,7 +738,7 @@ class MXNetParser(Parser):
         weightPrefix = source_node.name
         if weightPrefix.endswith("_fwd"):
             changeFlag = True
-            weightPrefix = weightPrefix.strip("_fwd")
+            weightPrefix = weightPrefix.split("_fwd")[0]
 
         # weights
         if self.weight_loaded:
@@ -791,7 +791,7 @@ class MXNetParser(Parser):
         weightPrefix = source_node.name
         if weightPrefix.endswith("_fwd"):
             changeFlag = True
-            weightPrefix = weightPrefix.strip("_fwd")
+            weightPrefix = weightPrefix.split("_fwd")[0]
 
         # name, op
         if act_type == 'prelu':
