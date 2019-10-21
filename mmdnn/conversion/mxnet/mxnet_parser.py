@@ -877,7 +877,29 @@ class MXNetParser(Parser):
 
     def rename_Flatten(self, source_node):
         self._convert_identity_operation(source_node, new_op='Flatten')
+'''
+    def rename_sum(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, new_op='sum')
 
+        # dim
+        if self.data_format in MXNetParser.channels_first or self.data_format == 'None':
+            IR_node.attr["axis"].i = MXNetParser._convert_axis(IR_node, int(source_node.get_attr("dim", "0")))
+        else:
+            IR_node.attr["axis"].i = int(source_node.get_attr("dim", "0"))
+        IR_node.attr["keep_dims "].b = MXNetParser.str2bool(source_node.get_attr("keepdims ", "False"))    
+    
+    def rename_mean(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, new_op='mean')
+
+        # dim
+        if self.data_format in MXNetParser.channels_first or self.data_format == 'None':
+            IR_node.attr["axis"].i = MXNetParser._convert_axis(IR_node, int(source_node.get_attr("dim", "0")))
+        else:
+            IR_node.attr["axis"].i = int(source_node.get_attr("dim", "0"))
+        IR_node.attr["keep_dims "].b = MXNetParser.str2bool(source_node.get_attr("keepdims ", "False"))
+'''    
+    def rename_sqrt(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, new_op='sqrt')
 
     def rename_Concat(self, source_node):
         IR_node = self._convert_identity_operation(source_node, new_op='Concat')
@@ -932,7 +954,12 @@ class MXNetParser(Parser):
 
     def rename_broadcast_mul(self, source_node):
         self._convert_identity_operation(source_node, new_op='Mul')
+        
+    def rename_broadcast_div(self, source_node):
+        self._convert_identity_operation(source_node, new_op='Div')
 
+    def rename_elemwise_mul(self, source_node):
+        self._convert_identity_operation(source_node, new_op='Mul')
 
     def rename__mul(self, source_node):
         self._convert_identity_operation(source_node, new_op='Mul')
