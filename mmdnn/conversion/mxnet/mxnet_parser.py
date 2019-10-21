@@ -385,10 +385,10 @@ class MXNetParser(Parser):
         IR_node = self._convert_identity_operation(source_node)
         kwargs = dict()
         pad = MXNetParser.str2intList(source_node.get_attr("pad_width"))
-        pad += [pad.pop(2), pad.pop(3)]
+        pad += [pad.pop(2), pad.pop(2)]
         kwargs['pads'] = pad
         kwargs['pads'] = convert_tf_pad_to_onnx(kwargs['pads'])
-        kwargs['mode'] = 'CONSTANT'
+        kwargs['mode'] = source_node.get_attr("mode", "CONSTANT")
         assign_IRnode_values(IR_node, kwargs)
         IR_node.attr["constant_values"].f = 0.
 
