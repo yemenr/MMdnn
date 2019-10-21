@@ -877,7 +877,7 @@ class MXNetParser(Parser):
 
     def rename_Flatten(self, source_node):
         self._convert_identity_operation(source_node, new_op='Flatten')
-'''
+    '''
     def rename_sum(self, source_node):
         IR_node = self._convert_identity_operation(source_node, new_op='sum')
 
@@ -897,7 +897,7 @@ class MXNetParser(Parser):
         else:
             IR_node.attr["axis"].i = int(source_node.get_attr("dim", "0"))
         IR_node.attr["keep_dims "].b = MXNetParser.str2bool(source_node.get_attr("keepdims ", "False"))
-'''    
+    '''
     def rename_sqrt(self, source_node):
         IR_node = self._convert_identity_operation(source_node, new_op='sqrt')
 
