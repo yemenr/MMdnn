@@ -490,7 +490,7 @@ class TensorflowParser2(Parser):
             return
 
         variable = self.check_const(self.tf_graph.get_node(add_node.in_edges[1])) #add_bias node
-        if variable.type != 'Const':
+        if not variable or variable.type != 'Const':
             return
 
 
@@ -560,6 +560,7 @@ class TensorflowParser2(Parser):
         weight_content = tensor_util.MakeNdarray(weight)
         self.set_weight(source_node.name, 'weights', weight_content)
         assign_IRnode_values(IR_node, kwargs)
+        self._get_bias(source_node, IR_node)
 
 
     def rename_BatchNormWithGlobalNormalization(self, source_node):
@@ -678,6 +679,8 @@ class TensorflowParser2(Parser):
         else:
             IR_node = self._convert_identity_operation(source_node, new_op = "Add")
 
+    def rename_AddV2(self, source_node):
+        self.rename_Add(source_node)
 
     def rename_Fill(self, source_node):
         IR_node = self._convert_identity_operation(source_node, new_op="Fill")
@@ -904,13 +907,15 @@ class TensorflowParser2(Parser):
 
     def rename_LRN(self, source_node):
         IR_node = self._convert_identity_operation(source_node)
+        size = source_node.get_attr('depth_radius') * 2 + 1
+        alpha = source_node.get_attr('alpha') * size
+        beta = source_node.get_attr('beta')
+        bias = source_node.get_attr('bias')
 
-        # alpha
-        IR_node.attr["alpha"].f = float(source_node.get_attr("alpha", "0.0001"))
-        # beta
-        IR_node.attr["beta"].f = float(source_node.get_attr("beta", "0.75"))
-        IR_node.attr["size"].i = source_node.get_attr("depth_radius")
-        IR_node.attr["bias"].f = float(source_node.get_attr("bias"))
+        IR_node.attr["alpha"].f = alpha
+        IR_node.attr["beta"].f = beta
+        IR_node.attr["size"].i = size
+        IR_node.attr["bias"].f = bias
 
 
     def rename_Concat(self, source_node):
@@ -1114,6 +1119,9 @@ class TensorflowParser2(Parser):
         variance = tensor_util.MakeNdarray(variance_value)
         self.set_weight(source_node.name, 'var', variance)
 
+    def rename_FusedBatchNormV3(self, source_node):
+        self.rename_FusedBatchNorm(source_node)
+
 
     def rename_SpaceToBatchND(self, source_node):
         IR_node = self._convert_identity_operation(source_node, end_idx=1, new_op = 'SpaceToBatchND')
@@ -1128,7 +1136,22 @@ class TensorflowParser2(Parser):
 
 
     def rename_Slice(self, source_node):
-        IR_node = self._convert_identity_operation(source_node, new_op = 'Slice')
+        input_node_begin = self.get_parent(source_node.name, [1])
+        input_node_size = self.get_parent(source_node.name, [2])
+
+        begin = tensor_util.MakeNdarray(input_node_begin.layer.attr['value'].tensor)
+        size = tensor_util.MakeNdarray(input_node_size.layer.attr['value'].tensor)
+
+        IR_node = self._convert_identity_operation(source_node, new_op='Slice')
+
+        # TODO:  only for 1D
+        end = size + begin
+        kwargs = {
+            'starts': begin,
+            'ends': end
+        }
+
+        assign_IRnode_values(IR_node, kwargs)
 
 
     def rename_Split(self, source_node):

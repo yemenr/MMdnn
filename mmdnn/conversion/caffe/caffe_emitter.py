@@ -47,7 +47,7 @@ from caffe import to_proto
 from six import text_type as _text_type
 
 
-__weights_dict = dict()
+_weights_dict = dict()
 
 def load_weights(weight_file):
     if weight_file == None:
@@ -75,25 +75,25 @@ def make_net(prototxt):
         print(n.to_proto(), file=fpb)
 
 def gen_weight(weight_file, model, prototxt):
-    global __weights_dict
-    __weights_dict = load_weights(weight_file)
+    global _weights_dict
+    _weights_dict = load_weights(weight_file)
 
     net = caffe.Net(prototxt, caffe.TRAIN)
 
-    for key in __weights_dict:
-        if 'weights' in __weights_dict[key]:
-            net.params[key][0].data.flat = __weights_dict[key]['weights']
-        elif 'mean' in __weights_dict[key]:
-            net.params[key][0].data.flat = __weights_dict[key]['mean']
-            net.params[key][1].data.flat = __weights_dict[key]['var']
-            if 'scale' in __weights_dict[key]:
-                net.params[key][2].data.flat = __weights_dict[key]['scale']
-        elif 'scale' in __weights_dict[key]:
-            net.params[key][0].data.flat = __weights_dict[key]['scale']
-        if 'bias' in __weights_dict[key]:
-            net.params[key][1].data.flat = __weights_dict[key]['bias']
-        if 'gamma' in __weights_dict[key]: # used for prelu, not sure if other layers use this too
-            net.params[key][0].data.flat = __weights_dict[key]['gamma']
+    for key in _weights_dict:
+        if 'weights' in _weights_dict[key]:
+            net.params[key][0].data.flat = _weights_dict[key]['weights']
+        elif 'mean' in _weights_dict[key]:
+            net.params[key][0].data.flat = _weights_dict[key]['mean']
+            net.params[key][1].data.flat = _weights_dict[key]['var']
+            if 'scale' in _weights_dict[key]:
+                net.params[key][2].data.flat = _weights_dict[key]['scale']
+        elif 'scale' in _weights_dict[key]:
+            net.params[key][0].data.flat = _weights_dict[key]['scale']
+        if 'bias' in _weights_dict[key]:
+            net.params[key][1].data.flat = _weights_dict[key]['bias']
+        if 'gamma' in _weights_dict[key]: # used for prelu, not sure if other layers use this too
+            net.params[key][0].data.flat = _weights_dict[key]['gamma']
     net.save(model)
     return net
 
@@ -172,6 +172,9 @@ if __name__=='__main__':
                 pad_w = pads[2] + (0 if pads[2] == pads[6] else stride_w)
             else:
                 pad_w = 0
+        elif IR_node.type == "Unpool":
+            pad_h = 0
+            pad_w = 0
         else:
             pad_h = pads[1] + (0 if pads[1] == pads[5] else stride_h)
             pad_w = pads[2] + (0 if pads[2] == pads[6] else stride_w)
@@ -245,6 +248,9 @@ if __name__=='__main__':
             if IR_node.type == 'Pool':
                 h_o = (h_i + 2 * pad_h - kernel_h + stride_h - 1) // stride_h + 1
                 w_o = (w_i + 2 * pad_w - kernel_w + stride_w - 1) // stride_w + 1
+            elif IR_node.type == 'Unpool':
+                h_o = (h_i - 2 * pad_h - kernel_h + stride_h) * stride_h
+                w_o = (w_i - 2 * pad_w - kernel_w + stride_w) * stride_w
             else:
                 h_o = (h_i + 2 * pad_h - kernel_h) // stride_h + 1
                 w_o = (w_i + 2 * pad_w - kernel_w) // stride_w + 1
@@ -260,7 +266,7 @@ if __name__=='__main__':
         ir_wo = shape[2]
         if ir_ho <0 or ir_wo<0:
             return
-        if IR_node.type == 'Pool':
+        if IR_node.type == 'Pool' or IR_node.type == 'Unpool':
             k_h = IR_node.get_attr('kernel_shape')[1]
             k_w = IR_node.get_attr('kernel_shape')[2]
         else:
@@ -330,6 +336,26 @@ if __name__=='__main__':
 
             # check if need crop output shape
             self.check_if_need_crop(IR_node)
+
+    def emit_Unpool(self, IR_node):
+        pad_h, pad_w = self._get_symmetric_padding(IR_node)
+        pool_size = IR_node.get_attr('kernel_shape')[1:3]
+        if pool_size[0] != pool_size[1]:
+            self.add_body(1, "n.{:<15} = L.Unpooling(n.{}, kernel_h={}, kernel_w={}, stride={}, ntop=1)".format(
+                IR_node.variable_name,
+                self.parent_variable_name(IR_node),
+                pool_size[0],
+                pool_size[1],
+                IR_node.get_attr('strides')[1]))
+        else:
+            self.add_body(1, "n.{:<15} = L.Unpooling(n.{}, kernel_size={}, stride={}, ntop=1)".format(
+                IR_node.variable_name,
+                self.parent_variable_name(IR_node),
+                pool_size[0],
+                IR_node.get_attr('strides')[1]))
+
+        # check if need crop output shape
+        self.check_if_need_crop(IR_node)
 
     def emit_ResizeBilinear(self, IR_node):
         shape = IR_node.get_attr("_output_shapes")[0]
@@ -439,13 +465,20 @@ if __name__=='__main__':
 
 
     def emit_LRN(self, IR_node):
+        output_name = IR_node.variable_name
+        input_name = self.parent_variable_name(IR_node)
+        size = IR_node.get_attr('size')
+        alpha = IR_node.get_attr('alpha')
+        beta = IR_node.get_attr('beta')
+        bias = IR_node.get_attr('bias')
+
         self.add_body(1, "n.{:<15} = L.LRN(n.{}, local_size={}, alpha={}, beta={}, k={})".format(
-            IR_node.variable_name,
-            self.parent_variable_name(IR_node),
-            IR_node.get_attr('size') * 2 - 1,
-            IR_node.get_attr('alpha'),
-            IR_node.get_attr('beta'),
-            IR_node.get_attr('k')
+            output_name,
+            input_name,
+            size,
+            alpha,
+            beta,
+            bias
         ))
 
 
@@ -573,8 +606,33 @@ if __name__=='__main__':
     def emit_ReduceSum(self, IR_node):
         self.reduction(IR_node, 1, IR_node.get_attr('axes'))
 
+    def get_layer_list(self):
+        try:
+            from caffe.proto import caffe_pb2
+            layer = caffe_pb2.LayerParameter()
+            param_list = [f.name for f in layer.DESCRIPTOR.fields if f.name.endswith('_param')]
+            layer_list = [type(getattr(layer, s)).__name__ for s in param_list]
+            layer_list = [s[:-len('Parameter')] for s in layer_list]
+            return layer_list
+        except:
+            return []
+
+    def clip_exists(self):
+        layer_list = self.get_layer_list()
+        return 'Clip' in layer_list
+
+    def emit_Relu6Clip(self, IR_node):
+        in_place = True
+        self.add_body(1, "n.{:<15} = L.Clip(n.{}, min=0, max=6, in_place={}, ntop=1)".format(
+            IR_node.variable_name,
+            self.parent_variable_name(IR_node),
+            in_place))
+
     def emit_Relu6(self, IR_node):
-        self.emit_Relu(IR_node)
+        if self.clip_exists():
+            self.emit_Relu6Clip(IR_node)
+        else:
+            self.emit_Relu(IR_node)
 
     def emit_DepthwiseConv(self, IR_node):
         self.emit_Conv(IR_node)

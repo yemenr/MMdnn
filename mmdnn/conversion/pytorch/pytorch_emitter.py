@@ -58,7 +58,7 @@ class PytorchEmitter(Emitter):
     def parent_variable_name(self, IR_node, path=[0], weight_type='weights'):
         if not IR_node.in_edges and IR_node.name in self.weights_dict.keys():
             self.weights_dict[IR_node.name][weight_type] = self.weights_dict[IR_node.name][weight_type]
-            return "torch.from_numpy(__weights_dict['{}']['{}'])".format(IR_node.name, weight_type)
+            return "torch.from_numpy(_weights_dict['{}']['{}'])".format(IR_node.name, weight_type)
 
         return super(PytorchEmitter, self).parent_variable_name(IR_node, path)
 
@@ -71,7 +71,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-__weights_dict = dict()
+_weights_dict = dict()
 
 def load_weights(weight_file):
     if weight_file == None:
@@ -91,8 +91,8 @@ class KitModel(nn.Module):
         self.add_init(1, """
     def __init__(self, weight_file):
         super(KitModel, self).__init__()
-        global __weights_dict
-        __weights_dict = load_weights(weight_file)
+        global _weights_dict
+        _weights_dict = load_weights(weight_file)
 """)
 
         self.add_body(1, "def forward(self, x):")
@@ -158,7 +158,7 @@ class KitModel(nn.Module):
 
         if IR_node.type == 'DepthwiseConv':
             group = in_channels
-            filter *= group
+            filter = group
 
         else:
             group = IR_node.get_attr('group', 1)
@@ -231,14 +231,16 @@ class KitModel(nn.Module):
                 pool_size = IR_node.get_attr('kernel_shape')[1:-1]
                 strides = IR_node.get_attr('strides')[1:-1]
 
-                code = "{:<15} = F.{}({}, kernel_size={}, stride={}, padding={}, ceil_mode={})".format(
+                code = "{}, {}_idx = F.{}({}, kernel_size={}, stride={}, padding={}, ceil_mode={}, return_indices={})".format(
+                    IR_node.variable_name,
                     IR_node.variable_name,
                     pool_name,
                     input_node,
                     tuple(pool_size),
                     tuple(strides),
                     0,
-                    False
+                    False,
+                    True
                     )
                 return code
 
@@ -266,6 +268,27 @@ class KitModel(nn.Module):
                 return code
             else:
                 raise ValueError()
+
+    def emit_Unpool(self, IR_node):
+        dim = len(IR_node.get_attr('strides')) - 2
+
+        # Change to padding defuse
+        input_node = self.parent_variable_name(IR_node)
+        index_node = self.parent_variable_name(IR_node,[1])
+        pool_name = "max_unpool{}d".format(dim)
+        pool_size = IR_node.get_attr('kernel_shape')[1:-1]
+        strides = IR_node.get_attr('strides')[1:-1]
+
+        code = "{:<15} = F.{}({},{}_idx, kernel_size={}, stride={}, padding={})".format(
+            IR_node.variable_name,
+            pool_name,
+            input_node,
+            index_node,
+            tuple(pool_size),
+            tuple(strides),
+            0
+            )
+        return code
 
 
     def emit_UNKNOWN(self, IR_node):
@@ -476,11 +499,11 @@ class KitModel(nn.Module):
                 IR_node.variable_name,
                 value)
         else:
-            code = "self.{:<15} = torch.autograd.Variable(torch.from_numpy(__weights_dict['{}']['value']), requires_grad=False)".format(
+            code = "self.{:<15} = torch.autograd.Variable(torch.from_numpy(_weights_dict['{}']['value']), requires_grad=False)".format(
                 IR_node.variable_name,
                 IR_node.name)
         
-        # self.add_init(2, "self.{:<15} = torch.from_numpy(__weights_dict['{}']['value'])".format(
+        # self.add_init(2, "self.{:<15} = torch.from_numpy(_weights_dict['{}']['value'])".format(
         #     IR_node.variable_name,
         #     IR_node.name))
         IR_node.real_name = "self." + IR_node.variable_name
@@ -499,7 +522,7 @@ class KitModel(nn.Module):
 
     def emit_Concat(self, IR_node):
         axis = self._convert_axis(IR_node, IR_node.get_attr('axis'))
-        code = "{:<15} = torch.cat(({}), {})".format(
+        code = "{:<15} = torch.cat(({},), {})".format(
             IR_node.variable_name,
             ', '.join(self.parent_variable_name(IR_node, [idx]) for idx in range(len(IR_node.in_edges))),
             axis,
@@ -606,13 +629,20 @@ class KitModel(nn.Module):
 
 
     def emit_LRN(self, IR_node):
+        output_name = IR_node.variable_name
+        input_name = self.parent_variable_name(IR_node)
+        size = IR_node.get_attr('size')
+        alpha = IR_node.get_attr('alpha')
+        beta = IR_node.get_attr('beta')
+        bias = IR_node.get_attr('bias', 1)
+
         code =  "{:<15} = F.local_response_norm({}, size={}, alpha={}, beta={}, k={})".format(
-            IR_node.variable_name,
-            self.parent_variable_name(IR_node),
-            IR_node.get_attr('size') * 2 - 1,
-            IR_node.get_attr('alpha'),
-            IR_node.get_attr('beta'),
-            IR_node.get_attr('k', 1)
+            output_name,
+            input_name,
+            size,
+            alpha,
+            beta,
+            bias
         )
         return code
 
@@ -773,7 +803,7 @@ class KitModel(nn.Module):
 
 
     def emit_PRelu(self, IR_node):
-        code = "{:<15} = F.prelu({}, torch.from_numpy(__weights_dict['{}']['weights']))".format(
+        code = "{:<15} = F.prelu({}, torch.from_numpy(_weights_dict['{}']['weights']))".format(
             IR_node.variable_name,
             self.parent_variable_name(IR_node, [0]),
             IR_node.name)
@@ -851,7 +881,7 @@ class KitModel(nn.Module):
     @staticmethod
     def __embedding(name, **kwargs):
         layer = nn.Embedding(**kwargs) #shape
-        layer.state_dict()['weight'].copy_(torch.from_numpy(__weights_dict[name]['weights']))
+        layer.state_dict()['weight'].copy_(torch.from_numpy(_weights_dict[name]['weights']))
         return layer
         """)
 
@@ -865,9 +895,9 @@ class KitModel(nn.Module):
         elif dim == 3:  layer = nn.Conv3d(**kwargs)
         else:           raise NotImplementedError()
 
-        layer.state_dict()['weight'].copy_(torch.from_numpy(__weights_dict[name]['weights']))
-        if 'bias' in __weights_dict[name]:
-            layer.state_dict()['bias'].copy_(torch.from_numpy(__weights_dict[name]['bias']))
+        layer.state_dict()['weight'].copy_(torch.from_numpy(_weights_dict[name]['weights']))
+        if 'bias' in _weights_dict[name]:
+            layer.state_dict()['bias'].copy_(torch.from_numpy(_weights_dict[name]['bias']))
         return layer""")
 
 
@@ -876,9 +906,9 @@ class KitModel(nn.Module):
     @staticmethod
     def __dense(name, **kwargs):
         layer = nn.Linear(**kwargs)
-        layer.state_dict()['weight'].copy_(torch.from_numpy(__weights_dict[name]['weights']))
-        if 'bias' in __weights_dict[name]:
-            layer.state_dict()['bias'].copy_(torch.from_numpy(__weights_dict[name]['bias']))
+        layer.state_dict()['weight'].copy_(torch.from_numpy(_weights_dict[name]['weights']))
+        if 'bias' in _weights_dict[name]:
+            layer.state_dict()['bias'].copy_(torch.from_numpy(_weights_dict[name]['bias']))
         return layer""")
 
 
@@ -891,18 +921,18 @@ class KitModel(nn.Module):
         elif dim == 3:  layer = nn.BatchNorm3d(**kwargs)
         else:           raise NotImplementedError()
 
-        if 'scale' in __weights_dict[name]:
-            layer.state_dict()['weight'].copy_(torch.from_numpy(__weights_dict[name]['scale']))
+        if 'scale' in _weights_dict[name]:
+            layer.state_dict()['weight'].copy_(torch.from_numpy(_weights_dict[name]['scale']))
         else:
             layer.weight.data.fill_(1)
 
-        if 'bias' in __weights_dict[name]:
-            layer.state_dict()['bias'].copy_(torch.from_numpy(__weights_dict[name]['bias']))
+        if 'bias' in _weights_dict[name]:
+            layer.state_dict()['bias'].copy_(torch.from_numpy(_weights_dict[name]['bias']))
         else:
             layer.bias.data.fill_(0)
 
-        layer.state_dict()['running_mean'].copy_(torch.from_numpy(__weights_dict[name]['mean']))
-        layer.state_dict()['running_var'].copy_(torch.from_numpy(__weights_dict[name]['var']))
+        layer.state_dict()['running_mean'].copy_(torch.from_numpy(_weights_dict[name]['mean']))
+        layer.state_dict()['running_var'].copy_(torch.from_numpy(_weights_dict[name]['var']))
         return layer""")
 
 
@@ -980,13 +1010,13 @@ class KitModel(nn.Module):
         elif dim == 3:  layer = KitModel.Scale3d(**kwargs)
         else:           raise NotImplementedError()
 
-        if 'scale' in __weights_dict[name]:
-            layer.state_dict()['weight'].copy_(torch.from_numpy(__weights_dict[name]['scale']))
+        if 'scale' in _weights_dict[name]:
+            layer.state_dict()['weight'].copy_(torch.from_numpy(_weights_dict[name]['scale']))
         else:
             layer.weight.data.fill_(1)
 
-        if 'bias' in __weights_dict[name]:
-            layer.state_dict()['bias'].copy_(torch.from_numpy(__weights_dict[name]['bias']))
+        if 'bias' in _weights_dict[name]:
+            layer.state_dict()['bias'].copy_(torch.from_numpy(_weights_dict[name]['bias']))
         else:
             layer.bias.data.fill_(0)
 

@@ -74,7 +74,7 @@ class MXNetGraph(Graph):
             # if layer["op"] == "null":
             #     continue
 
-            if re.search("_(weight|bias|var|mean|gamma|beta|label)", layer["name"]) and layer["op"] == "null":
+            if re.search("_(weight|bias|var|mean|gamma|beta|label|alpha)", layer["name"]) and layer["op"] == "null":
                 continue
 
             input_dict.update({layer_num: layer["name"]})

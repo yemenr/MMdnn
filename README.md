@@ -4,26 +4,27 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Linux](https://travis-ci.org/Microsoft/MMdnn.svg?branch=master)](https://travis-ci.org/Microsoft/MMdnn)
 
-A comprehensive, cross-framework solution to convert, visualize and diagnose deep neural network models. The "MM" in MMdnn stands for model management and "dnn" is an acronym for the deep neural network.
+MMdnn is a comprehensive and cross-framework tool to convert, visualize and diagnose deep learning (DL) models.
+The "MM" stands for model management, and "dnn" is the acronym of deep neural network.
 
-Major features
+Major features include:
 
-- **Find model**
+- <a href="#conversion">**Model Conversion**</a>
 
-  - We provide a [model collection](https://github.com/Microsoft/MMdnn/blob/master/mmdnn/models/README.md) to help you find some popular models.
+  - We implement a universal converter to convert DL models between frameworks, which means you can train a model with one framework and deploy it with another.
+
+- **Model Retraining**
+
+  - During the model conversion, we generate some code snippets to simplify later retraining or inference.
+
+- **Model Search & Visualization**
+
+  - We provide a [model collection](mmdnn/models/README.md) to help you find some popular models.
   - We provide a <a href="#visualization">model visualizer</a> to display the network architecture more intuitively.
 
-- <a href="#conversion">**Conversion**</a>
+- **Model Deployment**
 
-  - We implement a universal converter to convert DNN models between frameworks, which means you can train on one framework and deploy on another.
-
-- **Retrain**
-
-  - In the converter, we can generate some training/inference code snippet to simplify the retrain/evaluate work.
-
-- **Deployment**
-
-  - We provide some guidelines to help you deploy your models to another hardware platform.
+  - We provide some guidelines to help you deploy DL models to another hardware platform.
     - [Android](https://github.com/Microsoft/MMdnn/wiki/Deploy-your-TensorFlow-Lite-Model-in-Android)
     - [Serving](https://github.com/Microsoft/MMdnn/wiki/Tensorflow-Serving-Via-Docker)
     
@@ -33,12 +34,13 @@ Major features
 
 ## Related Projects
 
-Targeting at openness and advancing state-of-art technology, [Microsoft Research (MSR)](https://www.microsoft.com/en-us/research/group/systems-research-group-asia/) and [Microsoft Search Technology Center (STC)](https://www.microsoft.com/en-us/ard/company/introduction.aspx) had also released few other open source projects.
+Targeting at openness and advancing state-of-art technology, [Microsoft Research (MSR)](https://www.microsoft.com/en-us/research/group/systems-and-networking-research-group-asia/) and [Microsoft Software Technology Center (STC)](https://www.microsoft.com/en-us/ard/company/introduction.aspx) had also released few other open source projects:
 
 * [OpenPAI](https://github.com/Microsoft/pai) : an open source platform that provides complete AI model training and resource management capabilities, it is easy to extend and supports on-premise, cloud and hybrid environments in various scale.
 * [FrameworkController](https://github.com/Microsoft/frameworkcontroller) : an open source general-purpose Kubernetes Pod Controller that orchestrate all kinds of applications on Kubernetes by a single controller.
-* [NNI](https://github.com/Microsoft/nni) : An open source AutoML toolkit for neural architecture search and hyper-parameter tuning.
-* [NeuronBlocks](https://github.com/Microsoft/NeuronBlocks) : A NLP deep learning modeling toolkit that helps engineers to build DNN models like playing Lego. The main goal of this toolkit is to minimize developing cost for NLP deep neural network model building, including both training and inference stages.
+* [NNI](https://github.com/Microsoft/nni) : a lightweight but powerful toolkit to help users automate Feature Engineering, Neural Architecture Search, Hyperparameter Tuning and Model Compression.
+* [NeuronBlocks](https://github.com/Microsoft/NeuronBlocks) : an NLP deep learning modeling toolkit that helps engineers to build DNN models like playing Lego. The main goal of this toolkit is to minimize developing cost for NLP deep neural network model building, including both training and inference stages.
+* [SPTAG](https://github.com/Microsoft/SPTAG) : Space Partition Tree And Graph (SPTAG) is an open source library for large scale vector approximate nearest neighbor search scenario.
 
 We encourage researchers, developers and students to leverage these projects to boost their AI / Deep Learning productivity.
 
@@ -90,7 +92,7 @@ We provide a model converter to help developers convert models between framework
 
 #### Support frameworks
 
-> [Note] You can click the links to get detail README of each framework
+> [Note] You can click the links to get detailed README of each framework.
 
 - [Caffe](https://github.com/Microsoft/MMdnn/blob/master/mmdnn/conversion/caffe/README.md)
 - [Microsoft Cognitive Toolkit (CNTK)](https://github.com/Microsoft/MMdnn/blob/master/mmdnn/conversion/cntk/README.md)
@@ -152,25 +154,8 @@ Done.
 
 ### <a name="visualization">Model Visualization</a>
 
-You can use the [MMdnn model visualizer](http://vis.mmdnn.com/) and submit your IR json file to visualize your model.  In order to run the commands below, you will need to install [requests](https://anaconda.org/anaconda/requests), [keras](https://anaconda.org/anaconda/keras), and [TensorFlow](https://anaconda.org/anaconda/tensorflow) using your favorite package manager.
-
-Use the [Keras "inception_v3" model](https://github.com/fchollet/deep-learning-models) as an example again.
-
-1. Download the pre-trained models
-
-```bash
-$ mmdownload -f keras -n inception_v3
-```
-
-2. Convert the pre-trained model files into an intermediate representation
-
-```bash
-$ mmtoir -f keras -w imagenet_inception_v3.h5 -o keras_inception_v3
-```
-
-3. Open the [MMdnn model visualizer](http://mmdnn.eastasia.cloudapp.azure.com:8080/) and choose file *keras_inception_v3.json*
-
-![vismmdnn](docs/vismmdnn.png)
+We provide a [local visualizer](mmdnn/visualization) to display the network architecture of a deep learning model.
+Please refer to the [instruction](mmdnn/visualization/README.md).
 
 ---
 
@@ -212,6 +197,17 @@ $ mmtoir -f keras -w imagenet_inception_v3.h5 -o keras_inception_v3
 
 ## Contributing
 
+Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to and actually do, grant us
+the rights to use your contribution. For details, visit https://cla.microsoft.com.
+
+When you submit a pull request, a CLA-bot will automatically determine whether you need to provide
+a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the instructions
+provided by the bot. You will only need to do this once across all repos using our CLA.
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
 ### Intermediate Representation
 
 The intermediate representation stores the **network architecture** in **protobuf binary** and **pre-trained weights** in **NumPy** native format.
@@ -224,22 +220,11 @@ Details are in [ops.txt](https://github.com/Microsoft/MMdnn/blob/master/mmdnn/co
 
 We are working on other frameworks conversion and visualization, such as PyTorch, CoreML and so on. We're investigating more RNN related operators. Any contributions and suggestions are welcome! Details in [Contribution Guideline](https://github.com/Microsoft/MMdnn/wiki/Contribution-Guideline).
 
-### License
-
-Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.microsoft.com.
-
-When you submit a pull request, a CLA-bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
 ## Authors
 
-Cheng CHEN (Microsoft Research Asia): Project Manager; Caffe, CNTK, CoreML Emitter, Keras, MXNet, TensorFlow
+Yu Liu (Peking University): Project Developer & Maintainer
+
+Cheng CHEN (Microsoft Research Asia): Caffe, CNTK, CoreML Emitter, Keras, MXNet, TensorFlow
 
 Jiahao YAO (Peking University): CoreML, MXNet Emitter, PyTorch Parser; HomePage
 
@@ -256,3 +241,6 @@ Qianwen WANG (Hong Kong University of Science and Technology): Visualization
 ## Acknowledgements
 
 Thanks to [Saumitro Dasgupta](https://github.com/ethereon), the initial code of *caffe -> IR converting* is references to his project [caffe-tensorflow](https://github.com/ethereon/caffe-tensorflow).
+
+## License
+Licensed under the [MIT](LICENSE) license.

@@ -267,14 +267,6 @@ class TensorflowParser(Parser):
         elif dest_nodes != None:
             from tensorflow.python.framework.graph_util import extract_sub_graph
             model = extract_sub_graph(model, dest_nodes)
-            self.tf_graph = TensorflowGraph(model)
-
-        else:
-            self.tf_graph = TensorflowGraph(model)
-
-
-        # Graph Transform
-        transforms = ["fold_constants(ignore_errors=true)"]
 
         #  Get input node name
         if not in_nodes:
@@ -283,8 +275,10 @@ class TensorflowParser(Parser):
                 if node.op == 'Placeholder':
                     in_nodes.append(node.name)
 
+        # Graph Transform
+        transforms = ["fold_constants(ignore_errors=true)"]
         transformed_graph_def = TransformGraph(model, in_nodes,
-                                            dest_nodes, transforms)
+                                                dest_nodes, transforms)
         in_type_list = {}
         in_shape_list = {}
 
@@ -579,7 +573,7 @@ class TensorflowParser(Parser):
         if not source_node.covered:
             scopes = self._get_scopes(source_node.name)
             if len(scopes) < 3:
-                self._convert_identity_operation(source_node)
+                self._convert_identity_operation(source_node,new_op='Add')
 
             elif scopes[-2] == 'dropout':
                 # converted [dropout]
@@ -592,8 +586,10 @@ class TensorflowParser(Parser):
             else:
                 # normal Add
                 self._add_constant_node(source_node)
-                self._convert_identity_operation(source_node)
+                self._convert_identity_operation(source_node,new_op='Add')
 
+    def rename_AddV2(self, source_node):
+        self.rename_Add(source_node)
 
     def rename_Sub(self, source_node):
         self._add_constant_node(source_node)
@@ -772,6 +768,7 @@ class TensorflowParser(Parser):
             self.set_weight(source_node.name, 'weights', self.ckpt_data[weight.name])
 
         assign_IRnode_values(IR_node, kwargs)
+        self._get_bias(source_node, IR_node)
 
 
     def rename_FusedBatchNorm(self, source_node):
@@ -818,6 +815,8 @@ class TensorflowParser(Parser):
             self.set_weight(source_node.name, 'mean', self.ckpt_data[mean.name])
             self.set_weight(source_node.name, 'var', self.ckpt_data[var.name])
 
+    def rename_FusedBatchNormV3(self, source_node):
+        self.rename_FusedBatchNorm(source_node)
 
     def rename_Shape(self, source_node):
         IR_node = self._convert_identity_operation(source_node, in_edge_count=1, new_op='Shape')
@@ -966,18 +965,16 @@ class TensorflowParser(Parser):
         input_node_begin = self.get_parent(source_node.name, [1])
         input_node_size = self.get_parent(source_node.name, [2])
 
-        shape = self.get_parent(source_node.name, [0]).layer.attr['value'].tensor
-        shape = tensor_util.MakeNdarray(shape).tolist()
+        begin = tensor_util.MakeNdarray(input_node_begin.layer.attr['value'].tensor)
+        size = tensor_util.MakeNdarray(input_node_size.layer.attr['value'].tensor)
 
-        begin = input_node_begin.get_attr("axis")
+        IR_node = self._convert_identity_operation(source_node, in_edge_count=1, new_op='Slice')
 
-        IR_node = self._convert_identity_operation(source_node, in_edge_count=2, new_op='Slice')
-
-        # TODO:  only for 1D
-        end = int(input_node_size.layer.attr['value'].tensor.int_val[0]) + begin
+        # TODO:  axis
+        end = size + begin
         kwargs = {
-            'begin_mask' : begin,
-            'end_mask' : end
+            'starts' : begin,
+            'ends' : end
         }
 
         assign_IRnode_values(IR_node, kwargs)
@@ -985,11 +982,16 @@ class TensorflowParser(Parser):
 
     def rename_LRN(self, source_node):
         IR_node = self._convert_identity_operation(source_node)
+        size = source_node.get_attr('depth_radius') * 2 + 1
+        alpha = source_node.get_attr('alpha') * size
+        beta = source_node.get_attr('beta')
+        bias = source_node.get_attr('bias')
+
         kwargs = {
-            "alpha" : source_node.get_attr('alpha') * (source_node.get_attr('depth_radius') * 2 + 1),
-            "beta" : source_node.get_attr('beta'),
-            "bias" : source_node.get_attr('bias'),
-            'size' : source_node.get_attr('depth_radius') + 1
+            "alpha" : alpha,
+            "beta" : beta,
+            "bias" : bias,
+            'size' : size,
         }
         assign_IRnode_values(IR_node, kwargs)
 
@@ -1050,8 +1052,8 @@ class TensorflowParser(Parser):
     def rename_Minimum(self, source_node):
         self._add_constant_node(source_node)
         self._convert_identity_operation(source_node)
-    
-    def rename_Maxmum(self, source_node):
+
+    def rename_Maximum(self, source_node):
         self._add_constant_node(source_node)
         self._convert_identity_operation(source_node)
 

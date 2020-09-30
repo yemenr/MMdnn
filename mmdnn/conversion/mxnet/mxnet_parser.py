@@ -796,9 +796,11 @@ class MXNetParser(Parser):
         # name, op
         if act_type == 'prelu':
             self._copy_and_reop(source_node, IR_node, "PRelu")
-
+            gammaKey = weightPrefix + "_gamma"
+            if gammaKey not in self.weight_data:
+                gammaKey = weightPrefix + "_alpha"
             # gamma
-            self.set_weight(source_node.name, "gamma", self.weight_data.get(weightPrefix + "_gamma").asnumpy())
+            self.set_weight(source_node.name, "gamma", self.weight_data.get(gammaKey).asnumpy())
 
         else:  # All other cases set to 'Elu'
             self._copy_and_reop(source_node, IR_node, "Elu")
@@ -827,15 +829,15 @@ class MXNetParser(Parser):
 
     def rename_LRN(self, source_node):
         IR_node = self._convert_identity_operation(source_node)
+        alpha = source_node.get_attr("alpha", "0.0001")
+        beta = source_node.get_attr("beta", "0.75")
+        bias = source_node.get_attr("knorm", "2")
+        size = source_node.get_attr("nsize")
 
-        # alpha
-        IR_node.attr["alpha"].f = float(source_node.get_attr("alpha", "0.0001"))
-        # beta
-        IR_node.attr["beta"].f = float(source_node.get_attr("beta", "0.75"))
-        # knorm
-        IR_node.attr["k"].f = float(source_node.get_attr("knorm", "2"))
-        # nsize
-        IR_node.attr["size"].i = float(source_node.get_attr["nsize"])
+        IR_node.attr["alpha"].f = alpha
+        IR_node.attr["beta"].f = beta
+        IR_node.attr["bias"].f = bias
+        IR_node.attr["size"].i = size
 
 
     def rename_ROIPooling(self, source_node):
@@ -992,6 +994,11 @@ class MXNetParser(Parser):
     def rename__minus_scalar(self, source_node):
         self._convert_scalar_operator(source_node, 'Sub')
 
+    def rename__plus_scalar(self, source_node):
+        self._convert_scalar_operator(source_node, 'Add')
+
+    def rename__div_scalar(self, source_node):
+        self._convert_scalar_operator(source_node, 'Div')
 
     def rename__copy(self, source_node):
         source_node.real_name = self.get_parent(source_node.name, [0]).real_name
@@ -1007,6 +1014,15 @@ class MXNetParser(Parser):
         kwargs['scales'] = [scale, scale]
         assign_IRnode_values(IR_node, kwargs)
 
+    def rename_clip(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, "clip_by_value")
+        kwargs = dict()
+        a_min = MXNetParser.str2intList(source_node.get_attr("a_min"))[0]
+        a_max = MXNetParser.str2intList(source_node.get_attr("a_max"))[0]
+        kwargs['clip_value_min'] = a_min
+        kwargs['clip_value_max'] = a_max
+        assign_IRnode_values(IR_node, kwargs)
+
     def rename_Crop(self, source_node):
         IR_node = self._convert_identity_operation(source_node, "Slice")
         targetName = source_node.in_edges[1]
@@ -1017,7 +1033,17 @@ class MXNetParser(Parser):
         kwargs["ends"] = targetShape
         kwargs["strides"] = [1,1,1,1]
         assign_IRnode_values(IR_node, kwargs)
-    
+
+    def rename_slice(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, "Slice")
+        targetShape = IR_node.attr["_output_shapes"].list.shape
+        targetShape = [targetShape[0].dim[0].size, targetShape[0].dim[1].size, targetShape[0].dim[2].size, targetShape[0].dim[3].size] 
+        kwargs = dict()
+        kwargs["starts"] = [0,0,0,0]
+        kwargs["ends"] = targetShape
+        kwargs["strides"] = [1,1,1,1]
+        assign_IRnode_values(IR_node, kwargs)
+
     def rename_Reshape(self, source_node):
         IR_node = self._convert_identity_operation(source_node, "Reshape")
         kwargs = dict()
@@ -1028,3 +1054,12 @@ class MXNetParser(Parser):
 
     def rename_SoftmaxActivation(self, source_node):
         IR_node = self._convert_identity_operation(source_node, "Softmax")
+
+    def rename_Cast(self, source_node):
+        IR_node = self._convert_identity_operation(source_node, new_op='Cast')
+
+        # dtype
+        IR_node.attr["dtype"].type = MXNetParser.dtype_map[source_node.get_attr("dtype")]
+
+        # output shape
+        self.set_output_shape(source_node, IR_node)

@@ -67,7 +67,7 @@ class NodeMapper(object):
             else:
                 o_h_tf = (input_shape.height + node.kernel_parameters.p_h * 2 - ko_h + 1) // node.kernel_parameters.s_h
                 o_w_tf = (input_shape.width + node.kernel_parameters.p_w * 2 - ko_w + 1) // node.kernel_parameters.s_w
-
+            
             kwargs['pads'] = [0, node.kernel_parameters.p_h, node.kernel_parameters.p_w, 0] + \
                     [0, node.kernel_parameters.p_h + o_h_caffe - o_h_tf, node.kernel_parameters.p_w + o_w_caffe - o_w_tf, 0]
 
@@ -184,6 +184,16 @@ class NodeMapper(object):
 
 
     @classmethod
+    def map_unpooling(cls, node):
+        kwargs = {}
+        kwargs['kernel_shape'] = [1, node.kernel_parameters.k_h, node.kernel_parameters.k_w, 1]
+        kwargs['pads'] = [0, node.kernel_parameters.p_h, node.kernel_parameters.p_w, 0]
+        kwargs['strides'] = [1, node.kernel_parameters.s_h, node.kernel_parameters.s_w, 1]
+        cls._convert_output_shape(kwargs, node)
+        return Node.create('Unpool', **kwargs)
+
+
+    @classmethod
     def _add_flatten_layer(cls, node):
         shape = TensorShape()
         dim = shape.dim.add()
@@ -230,7 +240,7 @@ class NodeMapper(object):
     def map_lrn(cls, node):
         params = node.parameters
         assert params.local_size % 2 == 1
-        kwargs = {'size': int((params.local_size + 1) / 2), 'alpha': params.alpha, 'beta': params.beta, 'k' : params.k}
+        kwargs = {'size': int(params.local_size), 'alpha': params.alpha, 'beta': params.beta, 'bias' : params.k}
         cls._convert_output_shape(kwargs, node)
         return Node.create('LRN', **kwargs)
 
